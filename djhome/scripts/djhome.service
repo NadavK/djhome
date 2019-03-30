@@ -1,0 +1,16 @@
+[Unit]
+Description=Djhome process manager
+After=syslog.target network.target nss-lookup.target
+
+[Service]
+Type=simple
+#ExecStart=/home/pi/Envs/djhome/bin/circusd /home/pi/djhome/circus.ini
+ExecStart=/usr/local/bin/circusd /home/pi/djhome/circus.ini
+ExecStop=/usr/local/bin/circusctl stop
+ExecReload=/usr/local/bin/circusctl reload
+Restart=always
+RestartSec=5
+Environment="DEBUG=false"
+
+[Install]
+WantedBy=multi-user.target
