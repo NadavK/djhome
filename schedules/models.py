@@ -66,9 +66,9 @@ class Schedule(models.Model):
     RELATIVE_TYPE_SUNRISE = 1
     RELATIVE_TYPE_SUNSET = 2
     RELATIVE_TYPES = (
-        (RELATIVE_TYPE_ABSOLUTE, 'Regular Time'),
-        (RELATIVE_TYPE_SUNRISE, 'Relative to Sunrise'),
-        (RELATIVE_TYPE_SUNSET, 'Relative to Sunset'),
+        (RELATIVE_TYPE_ABSOLUTE, 'Absolute'),
+        (RELATIVE_TYPE_SUNRISE, 'Sunrise'),
+        (RELATIVE_TYPE_SUNSET, 'Sunset'),
     )
     #XXX_INPUT_TYPES = (
     #    (INPUT_TYPE_TOGGLE, 'Toggle', 'Toggle (click) on/off switch for A/C & lights'),
@@ -147,9 +147,9 @@ class Schedule(models.Model):
         return self.active and not self.deleted
 
     '''Finds next schedule time - should only be called by save() [does not call save()]'''
-    def _prepare_next(self, now=0, just_testing=False, for_next_time=False):
+    def next_datetime(self, now=0, info_only=False, for_next_time=False):
         '''
-        if self.task_id and not just_testing:
+        if self.task_id and not info_only:
             try:
                 #Note: Revoke doesn't actually delete the task...
                 self.logger.info('Revoking schedule [task_id=%s] - %s', self.task_id, self)
@@ -193,25 +193,27 @@ class Schedule(models.Model):
                         time_str = self.time.split(':')
                         hour = int(time_str[0])
                         minute = int(time_str[1])
-                        minutes = hour*60 + minute      # used for relative schedule
+                        minutes = hour * 60 + minute  # used for relative schedule
                         if self.time[0] == '-' and minutes >= 0:  # the hour can be 0 which negates the minus sign, so specifically check and set negative time
                             minutes = -abs(minutes)
-                        if self.time_reference == self.RELATIVE_TYPE_SUNRISE:
-                            schedule_datetime = datetime.combine(date, time(hour=suntimes[0].hour, minute=suntimes[0].minute, tzinfo=tzlocal())) + timedelta(minutes=minutes)
-                        elif self.time_reference == self.RELATIVE_TYPE_SUNSET:
-                            schedule_datetime = datetime.combine(date, time(hour=suntimes[1].hour, minute=suntimes[1].minute, tzinfo=tzlocal())) + timedelta(minutes=minutes)
+                        if self.time_reference in [self.RELATIVE_TYPE_SUNRISE, self.RELATIVE_TYPE_SUNSET]:
+                            suntime = suntimes[0] if self.time_reference == self.RELATIVE_TYPE_SUNRISE else suntimes[1]
+                            schedule_datetime = datetime.combine(date, time(hour=suntime.hour, minute=suntime.minute, tzinfo=tzlocal())) + timedelta(minutes=minutes)
                         else:
                             schedule_datetime = datetime.combine(date, time(hour, minute, tzinfo=tzlocal()))
 
                         if schedule_datetime < now:
                             self.logger.info('Today\'s (%s) schedule is past (%s), looking for tomorrow\'s schedule - %s: ', schedule_datetime, now, self)
                         else:
-                            if not just_testing:
+                            if not info_only:
                                 scheduler = Scheduler(connection=Redis())  # Get a scheduler for the "default" queue
                                 job = scheduler.enqueue_at(func=set_output_state_from_schedule, args=(self.pk, Schedule.type, self.turn_on, self.target_position), scheduled_time=schedule_datetime.astimezone(pytz.utc))
                                 self.task_id = job.id
-                            self.logger.info('Defined schedule for %s [task_id=%s] - %s', schedule_datetime, self.task_id, self)
+                                self.logger.info('Defined schedule time %s [task_id=%s]: %s', schedule_datetime, self.task_id, self)
+                            else:
+                                self.logger.info('Next schedule time %s: %s', schedule_datetime, self)
                             return schedule_datetime
+
 
     '''wrapper function to prepare next schedule (instead of calling save)'''
     def prepare_next_schedule(self, **kwargs):
@@ -226,17 +228,17 @@ class Schedule(models.Model):
         #self.logger.debug('caller name: %s' % calframe[1][3])
 
         for_next_time = kwargs.pop('for_next_time', None)
-        just_testing = kwargs.pop('just_testing', None)
+        info_only = kwargs.pop('info_only', None)
         if for_next_time:
             self.logger.info('for_next_time: %s', for_next_time)
-        if just_testing:
-            self.logger.info('just_testing: %s', just_testing)
+        if info_only:
+            self.logger.info('info_only: %s', info_only)
         #self.clean()
         self.full_clean()           #I think this is needed to test RegexValidator
         self.logger.debug('Saving %s' % self)
-        self._prepare_next(for_next_time=for_next_time, just_testing=just_testing)
+        self.next_datetime(for_next_time=for_next_time, info_only=info_only)
 
-        if just_testing:
+        if info_only:
             return
         return super(Schedule, self).save(**kwargs)
 
@@ -302,11 +304,11 @@ class OnetimeSchedule(models.Model):
     def end_date(self):
         return datetime.combine(self.date, self.end.replace(tzinfo=tzlocal()))
 
-    def _prepare_next(self, now=0, just_testing=False, for_next_time=False):
+    def _prepare_next(self, now=0, info_only=False, for_next_time=False):
         '''
         Finds next schedule time - should only be called by save() [does not call save()]
         :param now:
-        :param just_testing:    does not create actual celery schedule
+        :param info_only:    does not create actual celery schedule
         :param for_next_time:   Will find the next schedule to create (based on next 15-minute segment from now)
         :return:    scheduled_date and scheduled_state (bool)
         '''
@@ -378,7 +380,7 @@ class OnetimeSchedule(models.Model):
         seg_index = time_to_seg_index(schedule_datetime)               # this is the segment for the next schedule run
         on = get_seg(seg_index)
 
-        if just_testing:
+        if info_only:
             self.logger.info('Onetime Schedule for %s (seg_index %s) %s - %s ', schedule_datetime, seg_index, 'on' if on else 'off', self)
         else:
             scheduler = Scheduler(connection=Redis())  # Get a scheduler for the "default" queue
@@ -394,17 +396,17 @@ class OnetimeSchedule(models.Model):
     '''Every save also prepares the next schedule'''
     def save(self, **kwargs):
         for_next_time = kwargs.pop('for_next_time', None)
-        just_testing = kwargs.pop('just_testing', None)
+        info_only = kwargs.pop('info_only', None)
         if for_next_time:
             self.logger.info('for_next_time: %s', for_next_time)
-        if just_testing:
-            self.logger.info('just_testing: %s', just_testing)
+        if info_only:
+            self.logger.info('info_only: %s', info_only)
         #self.clean()
         self.full_clean()           #I think this is needed to test RegexValidator
 
         if not self.pk:
             super(OnetimeSchedule, self).save(**kwargs)                               # _prepare_next requires self.pk
-        self._prepare_next(for_next_time=for_next_time, just_testing=just_testing)
+        self._prepare_next(for_next_time=for_next_time, info_only=info_only)
         #force_update = False,
         kwargs['force_insert'] = False
         super(OnetimeSchedule, self).save(**kwargs)                                   # And save again the new values from _prepate_next

@@ -24,7 +24,7 @@ class ScheduleManager(models.Manager):
                 for task in tasks:
                     if task['request']['id'] == schedule.task_id:
                         logger.debug('Found existing task_id')
-                        next_eta = schedule._prepare_next(now=0, just_testing=True)
+                        next_eta = schedule._prepare_next(now=0, info_only=True)
                         logger.debug('etas: %s - %s' % (next_eta, task['eta']))
                         if task['eta'] == next_eta:
                             logger.debug('Found existing matching task_')
@@ -41,7 +41,7 @@ class OneTimeScheduleManager(models.Manager):
     #def get_queryset(self):
     #    return super(OneTimeScheduleManager, self).get_queryset().filter(deleted=False).prefetch_related('outputs', 'tags')
 
-    def is_onetime_active_for_datatime(self, output, date):     # should be "..._for_datetime"
+    def is_onetime_active_for_datetime(self, output, date):
         '''
         Return true if there are any active onetime schedules for the given output and date
         :param output:
