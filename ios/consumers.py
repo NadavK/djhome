@@ -11,14 +11,11 @@ class IOConsumer(JsonWebsocketConsumer):
     groups = ["broadcast"]
 
     """ Needed custom Consumer because Input doesn't have status field, and Output has _my_state field """
-    #logger = None
-    #input_model = None
-    #output_model = None
-
-    logger = logging.getLogger(__module__ + '.IOConsumer')
 
     def __init__(self, *args, **kwargs):
         #print("init:", args, kwargs)
+
+        self.logger = logging.getLogger(self.__module__ + '.IOConsumer')
 
         self.logger.debug('Created ActionConsumer logger')
         self.input_model = apps.get_model('ios', 'Input')
@@ -30,7 +27,10 @@ class IOConsumer(JsonWebsocketConsumer):
 
     def connect(self):
         self.logger.info('channel connection')
-        self.accept()
+        super().connect()
+
+    def accept(self, subprotocol=None):
+        super().accept(self.scope['jwt'])       # I don't know how to return multiple protocols
 
     def disconnect(self, close_code):
         pass
@@ -49,9 +49,9 @@ class IOConsumer(JsonWebsocketConsumer):
         try:
             cls.logger.info('Sending IO change notification')
 
-            """obj can be Input or Output - just need a pk"""
+            # obj can be Input or Output - just need a pk
             msg = json.dumps({"action": "update", "pk": obj.pk, "model": obj.__module__ + "." + obj.__class__.__name__, "state": state, "stream": "action", "duh":  str(datetime.datetime.now())})
-            cls.logger.debug('**************send_io_changed message2: %s' % msg)
+            cls.logger.debug('**************send_io_changed message: %s' % msg)
 
             # Send message to broadcast group
             # don't ask...  https://stackoverflow.com/questions/50299749/signals-and-django-channels-chat-room
@@ -68,9 +68,8 @@ class IOConsumer(JsonWebsocketConsumer):
         except Exception:
             cls.logger.exception('')
 
-
-    # Receive message from room group
     def broadcast_message(self, event):
+        """ Receive message from room group """
         message = event['message']
 
         # Send message to WebSocket
@@ -79,21 +78,27 @@ class IOConsumer(JsonWebsocketConsumer):
         }))
 
     def receive_json(self, content, **kwargs):
-        """ Receives an action from the user to change state for io object (input or output)"""
-        #self.logger.debug("USERRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR: " + str(self.message.user))
+        """ Receives an action from the user to change state for output object (input or output)"""
 
-        #Expected payload: {"message": {"sn": 127537, "index": 0, "state": true} }
-        #or maybe without message?
-        self.logger.debug('ActionConsumer %s' % content)
+        # Expected payload: {"stream":"action","payload":{"action":"update","model":"ios.models.Output","pk":"2","data":{"state":true}}}
+        user = self.scope.get('user')
+        if user is None or not user.is_authenticated:
+            self.logger.warning('Invalid user: ActionConsumer from %s (%s)' % (content, user))
+            self.send_json({'status': 'Not authorized'})
+            return
+
+        self.logger.info('ActionConsumer from %s (%s)' % (content, user))
         try:
             payload = content['payload']
             pk = payload['pk']
             state = payload['data']['state']
             model = payload['model']
             if model == 'ios.models.Output':
-                self.output_model.objects.set_state(pk, state)
+                #TODO: check user authorization
+                self.output_model.objects.set_state(pk, state, user=user)
             elif model == 'ios.models.Input':
-                self.input_model.objects.set_state(pk, state)
+                #TODO: check user authorization
+                self.input_model.objects.set_state(pk, state, user=user)
             else:
                 self.logger.error('ActionConsumer unknown model: %s' % model)
 
