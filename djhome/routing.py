@@ -1,19 +1,14 @@
-from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 import ios.routing
+from djhome.json_token_auth import JsonTokenAuthMiddlewareStack
 
 
-# The channel routing defines what channels get handled by what consumers,
-# including optional matching on message attributes. In this example, we route
-# all WebSocket connections to the class-based BindingConsumer (the consumer
-# class itself specifies what channels it wants to consume)
-#channel_routing = [
-#    route_class(Demultiplexer, path='^/stream/?$'),
-#]
+# Define Daphne routing
+# djhome only expects WebSocket connections from Daphne
 
 application = ProtocolTypeRouter({
     # (http->django views is added by default)
-    'websocket': AuthMiddlewareStack(
+    'websocket': JsonTokenAuthMiddlewareStack(
         URLRouter(
             ios.routing.websocket_urlpatterns
         )
