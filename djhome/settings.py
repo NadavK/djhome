@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_admin_listfilter_dropdown',
     'corsheaders',
     'django_rq',
     'taggit',
@@ -95,6 +96,7 @@ SESSION_COOKIE_SAMESITE = None
 
 CORS_ORIGIN_ALLOW_ALL = False  # not DEBUG
 CORS_ALLOW_CREDENTIALS = True
+
 
 
 #LOGIN_REDIRECT_URL = '/api/login/'
@@ -266,7 +268,8 @@ RQ_QUEUES = {
         'DEFAULT_TIMEOUT': 360,
     }
 }
-
+# may interfere with other apps that modifies the default admin template.
+RQ_SHOW_ADMIN_LINK = True
 #RQ_EXCEPTION_HANDLERS = ['path.to.my.handler'] # If you need custom exception handlers
 
 

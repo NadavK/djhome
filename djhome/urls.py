@@ -49,10 +49,11 @@ router.register(r'onetimeschedules', OnetimeScheduleViewSet)
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.
 urlpatterns = [
-    #url(r'', index),
-    #url(r'inputs/', inputs),
+    # url(r'', index),
+    # url(r'inputs/', inputs),
     url(r'api/times/', times),
     url(r'io/', io),
+    path('admin/rq/', include('django_rq.urls')),
     url(r'admin/', admin.site.urls),
     url(r'api/api-ios/', IOsView.as_view(), name='ios_api'),
     # url(r'^api/times/', SchedulesView.as_view(), name='times'),
@@ -61,5 +62,4 @@ urlpatterns = [
     url(r'api-token-auth/', obtain_jwt_token),
     url(r'api-token-refresh/', refresh_jwt_token),
     url(r'api-token-verify/', verify_jwt_token),
-    path('rq/', include('django_rq.urls'))
 ]
