@@ -11,11 +11,10 @@ class IOConsumer(JsonWebsocketConsumer):
     groups = ["broadcast"]
 
     """ Needed custom Consumer because Input doesn't have status field, and Output has _my_state field """
+    logger = logging.getLogger(__module__ + '.IOConsumer')
 
     def __init__(self, *args, **kwargs):
         #print("init:", args, kwargs)
-
-        self.logger = logging.getLogger(self.__module__ + '.IOConsumer')
 
         self.logger.debug('Created ActionConsumer logger')
         self.input_model = apps.get_model('ios', 'Input')
@@ -95,10 +94,10 @@ class IOConsumer(JsonWebsocketConsumer):
             model = payload['model']
             if model == 'ios.models.Output':
                 #TODO: check user authorization
-                self.output_model.objects.set_state(pk, state, user=user)
+                self.output_model.objects.set_state_by_pk(pk, state, user=user)
             elif model == 'ios.models.Input':
                 #TODO: check user authorization
-                self.input_model.objects.set_state(pk, state, user=user)
+                self.input_model.objects.set_state_by_pk(pk, state, user=user)
             else:
                 self.logger.error('ActionConsumer unknown model: %s' % model)
 

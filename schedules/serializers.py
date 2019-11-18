@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 class ScheduleSerializer(serializers.ModelSerializer):
     time_reference = serializers.SerializerMethodField()
-    absolute_time = serializers.SerializerMethodField()
+    absolute_next_time = serializers.SerializerMethodField()
 
     class Meta:
         model = Schedule
@@ -16,7 +16,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
         except Exception as ex:
             return 'UNKNOWN'
 
-    def get_absolute_time(self, obj):
+    def get_absolute_next_time(self, obj):
         return obj.next_datetime(for_next_time=False, info_only=True)
 
 

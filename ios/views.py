@@ -5,11 +5,15 @@ from django.views.decorators.http import require_http_methods
 from guardian.shortcuts import get_objects_for_user
 from redis import Redis
 from rest_framework import viewsets
-from rest_framework.decorators import action
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import action, authentication_classes
+from rest_framework_jwt.authentication import JSONWebTokenAuthentication
 from rq_scheduler import Scheduler
 
+from djhome import settings
+from djhome.json_token_auth import JSONWebTokenAuthenticationQueryString, TokenAuthenticationQueryString
 from djhome.permissions import IsAdminOrIsSelf
-from .models import Input, Output, InputToOutput
+from .models import Input, Output
 from .serializers import InputSerializer, InputAdminSerializer, OutputSerializer, InputSimpleSerializer, OutputSimpleSerializer, OutputAdminSerializer, TagSerializer
 #from phidgets.signals import ph_input_changed_helper, ph_output_changed_helper
 import logging
@@ -39,14 +43,15 @@ class InputViewSet(viewsets.ModelViewSet):
 
 
 
-    # permission is never  called!!!!!
+    # permission is never called!!!!!
     @action(methods=['post'], detail=False, permission_classes=[IsAdminOrIsSelf])
     def input(self, request):
         self.logger.debug('received input_changed: %s', request.data)
         ph_sn = request.data['sn']
         ph_index = request.data['index']
         state = request.data['state']
-        Input.objects.set_input_by_sn_index(ph_sn, ph_index, state)
+        user = self.request.user
+        Input.objects.set_input_by_sn_index(ph_sn, ph_index, state, user)
         return Response({'status': 'OK'})
 
 
@@ -59,7 +64,8 @@ class InputViewSet(viewsets.ModelViewSet):
         input = self.get_object()
         self.logger.debug('set_down INPUTTTTTTTTTTTTTTTTTTT: %s', input)
         #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, ph_index=input.ph_index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
-        input.on_state_change(True)
+        user = self.request.user
+        input.on_state_change(True, user)
         return Response({'status': 'OK'})
 
     @action(methods=['get'], detail=True, permission_classes=[IsAdminOrIsSelf])
@@ -67,7 +73,8 @@ class InputViewSet(viewsets.ModelViewSet):
         input = self.get_object()
         self.logger.debug('set_up INPUTTTTTTTTTTTTTTTTTTT: %s', input)
         #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, ph_index=input.ph_index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
-        input.on_state_change(False)
+        user = self.request.user
+        input.on_state_change(False, user)
         return Response({'status': 'OK'})
 
 
@@ -77,6 +84,7 @@ class OutputViewSet(viewsets.ModelViewSet):
     """
     queryset = Output.objects.all().order_by('id')
     serializer_class = OutputSerializer
+    authentication_classes = (JSONWebTokenAuthentication, TokenAuthentication, TokenAuthenticationQueryString)
 
     def __init__(self, *args, **kwargs):
         # this never seems to get called.
@@ -84,13 +92,17 @@ class OutputViewSet(viewsets.ModelViewSet):
         self.logger = logging.getLogger(self.__module__ + "." + self.__class__.__name__)
         self.logger.info('************ OutputViewSet __init__ **********************************')
 
-
     #@list_route(methods=['post'], url_path='recent')
     #def login(self, request):
     #    pass
 
     @action(methods=['get'], detail=False, permission_classes=[IsAdminOrIsSelf])
-    def outputs(self, request):
+    def defaults(self, request):
+        """
+        API: outputs/defaults/
+        Used by Phidget-Server to obtain the default outputs (response is asynchronous)
+        :return:
+        """
         self.logger.debug('received request for get default outputs')
         # This will make sure the app is always imported when Django starts so that shared_task will use this app.
         #from djhome.celery import app as celery_app
@@ -98,25 +110,37 @@ class OutputViewSet(viewsets.ModelViewSet):
         #TODO: Also need to do this at startup
         from ios.tasks import set_initial_phidget_outputs
         scheduler = Scheduler(connection=Redis())  # Get a scheduler for the "default" queue
-        scheduler.enqueue_in(func=set_initial_phidget_outputs, time_delta=timedelta(seconds=5))
+        scheduler.enqueue_in(func=set_initial_phidget_outputs, time_delta=timedelta(seconds=5), request_id=request.META.get(settings.LOG_REQUEST_ID_HEADER))
         #set_initial_phidget_outputs.apply_async((), countdown=5)
         return Response({'status': 'OK'})
 
-    #Sent by client to request to change output state
+    # Sent by client to request to change output state
     @action(methods=['get', 'post'], detail=False, permission_classes=[IsAdminOrIsSelf])
     def set_output(self, request):
         self.logger.debug('received set output request: %s', request.data)
-        ph_sn = request.data['sn']
-        ph_index = request.data['index']
         state = request.data['state']
-        Output.objects.set_state_by_sn_index(ph_sn, ph_index, state)
+        cue = request.data.get('cue')
+        self.logger.debug('cue: %s', cue)
+        if cue:
+            if state == 'on':
+                state = True
+            elif state == 'off':
+                state = False
+            outputs = Output.objects.filter(cues__slug=cue)
+            self.logger.debug('cueing outputs %s: %s', state, outputs)
+            for output in outputs:
+                output.set_state(state, user=self.request.user)
+        else:
+            ph_sn = request.data['sn']
+            ph_index = request.data['index']
+            Output.objects.set_state_by_sn_index(ph_sn, ph_index, state, self.request.user)
 
-        #self.logger.debug('Auditing...')        # this does func does not seem to be called...
-        #OutputAudit.objects.create(output=output, state=state, user=self.request.user)         # Save audit of what initiated the output-change
+            #self.logger.debug('Auditing...')        # this does func does not seem to be called...
+            #OutputAudit.objects.create(output=output, state=state, user=self.request.user)         # Save audit of what initiated the output-change
 
         return Response({'status': 'OK'})
 
-    #Sent by Phidget_Server to notify that output has changed
+    # Sent by Phidget_Server to notify that output has changed
     @action(methods=['post'], detail=False, permission_classes=[IsAdminOrIsSelf])
     def output_changed(self, request):
         self.logger.debug('received output_changed notification: %s', request.data)
@@ -185,10 +209,9 @@ from taggit.models import Tag
 
 class IOsView(APIView):
     """
-    View to list all users in the system.
+    View to list all authorized inputs/outputs for this user.
 
     * Requires token authentication.
-    * Only admin users are able to access this view.
     """
     #authentication_classes = (authentication.TokenAuthentication,)
     #permission_classes = (permissions.IsAdminUser,)

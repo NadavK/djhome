@@ -16,17 +16,18 @@ from rq import get_current_job
 
 
 @job
-def set_initial_phidget_outputs():
-    '''
-    Sends all outputs to PhidgetServer
-    '''
+def set_initial_phidget_outputs(request_id=None):
+    """
+    Sets the default values for all outputs to PhidgetServer
+    Requests the current state for all input and outputs from PhidgetServer
+    """
     logger = logging.getLogger(__name__)
     # prepare request_id
     from log_request_id import local
     from log_request_id.middleware import RequestIDMiddleware
-    empty_request_id = not hasattr(local, 'request_id') or local.request_id is None
-    if empty_request_id:
-        local.request_id = RequestIDMiddleware()._generate_id()
+    local_request_id = getattr(local, 'request_id', None)
+    if not local_request_id:
+        local.request_id = request_id or ('wsgi_setDefaultStates_' + RequestIDMiddleware()._generate_id())
     try:
         logger.warning('Calling PhidgetServer to set output states')
         #from rest_framework.authtoken.models import Token
@@ -47,11 +48,12 @@ def set_initial_phidget_outputs():
                     logger.warning('Unknown default state %s/%s: "%s"', sn, index, default_state)
             states = str(bytes(states_bytearray), 'UTF8').rstrip()
             url = settings.PHIDGET_SERVER_URL + 'default_outputs/' + sn
-            logger.warning('Calling PhidgetServer: %s, output mask: "%s"', url, states)
+            logger.warning('Calling PhidgetServer: POST %s, output mask: "%s"', url, states)
             try:
-                Session().post(url, json={'states': states}).raise_for_status()
+                Session().post(url, json={'states': states}, headers={settings.LOG_REQUEST_ID_HEADER: local.request_id}).raise_for_status()
             except Exception:
                 logger.exception('Calling PhidgetServer')
+                #TODO: Should retry
 
             #requests.post(url, json={'callback_url': me, 'token': token.key, 'outputs': states}).raise_for_status()
     except requests.exceptions.RequestException as e:  # catch all requests exception
@@ -62,9 +64,24 @@ def set_initial_phidget_outputs():
         logger.exception('')
         #logger.info('Retrying in 5 seconds')
         #set_outputs.apply_async((), countdown=5)
+    finally:
+        try:
+            if not local_request_id:
+                local.request_id = request_id or ('wsgi_get_states_' + RequestIDMiddleware()._generate_id())
+            url = settings.PHIDGET_SERVER_URL + 'states'
+            logger.warning('Calling PhidgetServer: GET %s', url)
+            Session().get(url, headers={settings.LOG_REQUEST_ID_HEADER: local.request_id}).raise_for_status()
+        except requests.exceptions.RequestException as e:  # catch all requests exception
+            logger.error(e)
+            # logger.info('Retrying in 5 seconds')
+            # set_outputs.apply_async((), countdown=5)
+        except Exception as ex:
+            logger.exception('')
+            # logger.info('Retrying in 5 seconds')
+            # set_outputs.apply_async((), countdown=5)
 
-    if empty_request_id:
-        delattr(local, 'request_id')
+        if not local_request_id:
+            delattr(local, 'request_id')
 
 
 @job
@@ -74,7 +91,7 @@ def set_output_state(args):
     pk, state, target_position = args
     from ios.models import Output
     #Output.objects.set_statef(pk, state, initiated_time)
-    Output.objects.set_state(pk, state, task_id=get_current_job().id, target_position=target_position)
+    Output.objects.set_state_by_pk(pk, state, target_position, task_id=get_current_job().id)
 
 
 @job
@@ -91,18 +108,20 @@ def set_output_state_from_schedule(args):
         return
 
     from schedules.models import Schedule, OnetimeSchedule
+    from ios.models import TriggerAudit, OutputAudit
     try:
         # TODO: this can be done dynamically
         if schedule_type == Schedule.type:
             schedule = Schedule.objects.get(pk=schedule_pk)
 
-            if OnetimeSchedule.objects.is_onetime_active_for_datatime(schedule.output, datetime.datetime.now()):
+            if OnetimeSchedule.objects.is_onetime_active_for_datetime(schedule.output, datetime.datetime.now()):
                 logger.info('A OneTimeSchedule is active for this time: %s, %s', schedule, schedule.output)
                 schedule.prepare_next_schedule(for_next_time=True)  # this will prepare the next schedule time
                 return
-
+            trigger = TriggerAudit.objects.model.create_from_schedule(schedule)
         elif schedule_type == OnetimeSchedule.type:
             schedule = OnetimeSchedule.objects.get(pk=schedule_pk)
+            trigger = TriggerAudit.objects.model.create_from_onetimeschedule(schedule)
         else:
             logger.error("Unknown schedule type: %s" % schedule_type)
             return
@@ -118,7 +137,8 @@ def set_output_state_from_schedule(args):
     else:
         if schedule.valid:
             from ios.models import Output
-            Output.objects.set_state(schedule.output.pk, state, target_position=target_position)
+            Output.objects.set_state_by_pk(schedule.output.pk, state, target_position)
+            OutputAudit.objects.model.create(trigger, schedule.output, target_position)
         else:
             logger.info('Schedule is inactive/deleted: %s', schedule)
         schedule.prepare_next_schedule(for_next_time=True)     # this will prepare the next schedule time
