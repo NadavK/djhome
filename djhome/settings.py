@@ -29,7 +29,7 @@ if DEBUG:
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'yourdomain.com', ]
 CORS_ORIGIN_WHITELIST = (
-    'localhost:8000', 'localhost:8100', 'yourdomain.com')  # This value should not contain a trailing dash, but calling url does require a trailing dash
+    'http://localhost', 'http://localhost:8000', 'http://localhost:8100', 'http://localhost:8101', 'https://yourdomain.com')      # This value should not contain a trailing dash, but calling url does require a trailing dash
 ADMINS = [('Admin', 'admin@yourdomain.com'), ]
 MANAGERS = ADMINS
 
@@ -87,15 +87,15 @@ MIDDLEWARE = [
 ]
 
 AUTHENTICATION_BACKENDS = (
-    'django.contrib.auth.backends.ModelBackend', # this is default
+    'django.contrib.auth.backends.ModelBackend',  # this is default
     'guardian.backends.ObjectPermissionBackend',
 )
 
-#CSRF_COOKIE_NAME = 'csrfmiddlewaretoken'
-#CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = None
 
-CORS_ORIGIN_ALLOW_ALL = False#not DEBUG
+CORS_ORIGIN_ALLOW_ALL = False  # not DEBUG
 CORS_ALLOW_CREDENTIALS = True
+
 
 #LOGIN_REDIRECT_URL = '/api/login/'
 LOGIN_REDIRECT_URL = ('..')
@@ -156,7 +156,7 @@ FIXTURE_DIRS = ('fixtures/',)
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'Israel'
+TIME_ZONE = 'Asia/Jerusalem'
 
 USE_I18N = True
 
@@ -170,7 +170,7 @@ TAGGIT_CASE_INSENSITIVE = True
 # https://docs.djangoproject.com/en/1.9/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = "/home/pi/djhome/run/static/"
+STATIC_ROOT = os.path.join(BASE_DIR, 'run/static')
 STATICFILES_DIRS = [
     #'djhome/static',
     #"ios/static",
@@ -203,6 +203,8 @@ JWT_AUTH = {
     #'JWT_EXPIRATION_DELTA': datetime.timedelta(seconds=3),              #TODO: Make longer for production
     'JWT_EXPIRATION_DELTA': datetime.timedelta(days=14),
     'JWT_REFRESH_EXPIRATION_DELTA': datetime.timedelta(days=36500),     #100 years!
+    'JWT_AUTH_HEADER_PREFIX': 'Bearer',
+    'JWT_AUTH_COOKIE': 'JWT',
 }
 
 
@@ -216,19 +218,6 @@ CHANNEL_LAYERS = {
         'CONFIG': {
             "hosts": [('127.0.0.1', 6379)],
         },
-    },
-    "default_old": {
-        # This example app uses the Redis channel layer implementation asgi_redis
-        #"BACKEND": "asgiref.inmemory.ChannelLayer",
-        #"BACKEND": "asgi_ipc.IPCChannelLayer",
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        #"BACKEND": "asgi_redis.RedisChannelLayer",
-        "CONFIG": {
-        #    "hosts": [(redis_host, 6379)],
-            "prefix": "mysite",
-            "capacity": 1000,
-        },
-        #"ROUTING": "djhome.routing.channel_routing",
     },
 }
 

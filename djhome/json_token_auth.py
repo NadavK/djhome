@@ -1,10 +1,41 @@
-from http import cookies
-
 from channels.auth import AuthMiddlewareStack
 from django.contrib.auth.models import AnonymousUser
 from django.db import close_old_connections
+from rest_framework.authentication import TokenAuthentication
 from rest_framework_jwt.authentication import BaseJSONWebTokenAuthentication
 import logging
+
+
+class TokenAuthenticationQueryString(TokenAuthentication):
+    def authenticate(self, request):
+        try:
+            self.logger = logging.getLogger(__name__)
+            self.logger.debug(request)
+            token = request.query_params.get('token')
+            self.logger.info('token: ' + str(token))
+            return self.authenticate_credentials(token)
+        except:
+            self.logger.exception('TokenAuthenticationQueryString: ')
+            return None
+
+
+class JSONWebTokenAuthenticationQueryString(BaseJSONWebTokenAuthentication):
+    """
+    Extracts the JWT from http query-param (instead of from http header)
+    """
+    logger = None
+
+    def get_jwt_value(self, request):
+        try:
+            self.logger = logging.getLogger(__name__)
+            self.logger.debug('request: %s', request)
+            jwt = request.query_params.get('jwt')
+            self.logger.info('jwt: ' + str(jwt))
+            return jwt
+        except:
+            self.logger.exception('JSONWebTokenAuthenticationQueryString: ')
+            return None
+
 
 class JsonWebTokenAuthenticationFromScope(BaseJSONWebTokenAuthentication):
     """
