@@ -1,7 +1,13 @@
-from .models import Input, Output, InputToOutput
+from .models import Input, Output, InputToOutput, Device
 from rest_framework import serializers
 from taggit_serializer.serializers import (TagListSerializerField, TaggitSerializer)
 from taggit.models import Tag
+
+
+class DeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Device
+        fields = ('id', 'description')
 
 
 class InputSerializer(TaggitSerializer, serializers.HyperlinkedModelSerializer):
@@ -9,20 +15,35 @@ class InputSerializer(TaggitSerializer, serializers.HyperlinkedModelSerializer):
     pk = serializers.ReadOnlyField()
     tags = TagListSerializerField()
     type = serializers.SerializerMethodField()
+    device = DeviceSerializer(many=False)
+    #device = serializers.PrimaryKeyRelatedField(queryset=Device.objects.all(), allow_null=True)
 
     #highlight = serializers.HyperlinkedIdentityField(view_name='set_down', format='html')
 
     class Meta:
         model = Input
-        #fields = ('url', 'ph_sn', 'ph_index', 'input_type', 'deleted', 'description', 'outputs')
-        #fields = ('url', 'url2', 'ph_sn', 'ph_index', 'input_type', 'deleted', 'description', 'outputs', 'tags',)
+        #fields = ('url', 'ph_sn', 'index', 'input_type', 'deleted', 'description', 'outputs')
+        #fields = ('url', 'url2', 'ph_sn', 'index', 'input_type', 'deleted', 'description', 'outputs', 'tags',)
         fields = '__all__'
+
 
     def get_type(self, obj):
         try:
             return Input.INPUT_TYPES[obj.input_type-1][1]
         except Exception as ex:
             return 'UNKNOWN'
+
+    # def get_device(self, obj):
+    #     try:
+    #         return obj.device.pk
+    #     except Exception as ex:
+    #         return 'NONE'
+
+    def set_device(self, obj, value):
+        try:
+            obj.device.pk = value
+        except Exception as ex:
+            return 'NONE'
 
 
 class InputSimpleSerializer(TaggitSerializer, serializers.ModelSerializer):
@@ -43,7 +64,7 @@ class InputSimpleSerializer(TaggitSerializer, serializers.ModelSerializer):
 class InputAdminSerializer(InputSimpleSerializer):
     class Meta(InputSimpleSerializer.Meta):
         model = Input
-        fields = 'pk', 'description', 'type', 'tags', 'state', 'ph_sn', 'ph_index'
+        fields = 'pk', 'description', 'type', 'tags', 'state', 'device', 'index'
 
 #
 # class OutputSerializer_base(TaggitSerializer, serializers.HyperlinkedModelSerializer):
@@ -75,7 +96,7 @@ class InputAdminSerializer(InputSimpleSerializer):
 #         model = Output
 #         fields = '__all__'
 #         extra_fields = ['permissions']
-#         #fields = ('pk', 'url', 'ph_sn', 'ph_index', 'output_type', 'deleted', 'description', 'total_progress', '_my_state',)
+#         #fields = ('pk', 'url', 'ph_sn', 'index', 'output_type', 'deleted', 'description', 'total_progress', '_my_state',)
 #
 #     def get_field_names(self, declared_fields, info):
 #         """
@@ -116,7 +137,7 @@ class InputAdminSerializer(InputSimpleSerializer):
 # class OutputAdminSerializer(OutputSimpleSerializer):
 #     class Meta(OutputSimpleSerializer.Meta):
 #         model = Output
-#         fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'ph_sn', 'ph_index'
+#         fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'ph_sn', 'index'
 #
 
 
@@ -133,11 +154,12 @@ class OutputSerializer(TaggitSerializer, serializers.HyperlinkedModelSerializer)
     type = serializers.SerializerMethodField()
     tags = TagListSerializerField()
     permissions = serializers.SerializerMethodField()
+    device = DeviceSerializer(many=False)
 
     class Meta:
         model = Output
         fields = '__all__'
-        #fields = ('pk', 'url', 'ph_sn', 'ph_index', 'output_type', 'deleted', 'description', 'total_progress', '_my_state',)
+        #fields = ('pk', 'url', 'ph_sn', 'index', 'output_type', 'deleted', 'description', 'total_progress', '_my_state',)
 
     def get_type(self, obj):
         try:
@@ -170,7 +192,7 @@ class OutputSimpleSerializer(OutputSerializer):
 class OutputAdminSerializer(OutputSimpleSerializer):
     class Meta(OutputSimpleSerializer.Meta):
         #model = Output
-        fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'permissions', 'supports_schedules', 'ph_sn', 'ph_index'
+        fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'permissions', 'supports_schedules', 'device', 'index'
 
 
 

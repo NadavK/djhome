@@ -20,10 +20,10 @@ from django.urls import path
 from rest_framework import routers, serializers, viewsets
 from rest_framework_jwt.views import obtain_jwt_token, refresh_jwt_token, verify_jwt_token
 #from rest_framework.authtoken import views
-from ios.views import InputViewSet, OutputViewSet, io, IOsView
+from ios.views import InputViewSet, OutputViewSet, io, IOsView, DeviceViewSet
 from schedules.views import ScheduleViewSet, OnetimeScheduleViewSet
 from schedules.views import times
-from ios.views import index
+#from ios.views import index
 
 
 # Serializers define the API representation.
@@ -41,6 +41,7 @@ class UserViewSet(viewsets.ModelViewSet):
 # Routers provide an easy way of automatically determining the URL conf.
 router = routers.DefaultRouter()
 router.register(r'users', UserViewSet)
+router.register(r'devices', DeviceViewSet)
 router.register(r'inputs', InputViewSet)
 router.register(r'outputs', OutputViewSet)
 router.register(r'schedules', ScheduleViewSet)

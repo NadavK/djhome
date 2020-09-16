@@ -16,14 +16,14 @@ class SchedulesTestCase(TestCase):
         #self.user2 = User.objects.create_user(username='user2', password='test')
         #self.user3 = User.objects.create_user(username='user3', password='test')
 
-        #self.sched0 = Schedule.objects.create(ph_sn=1, ph_index=0, input_type=Input.INPUT_TYPE_MAGNET, deleted=False, description='in 0')
+        #self.sched0 = Schedule.objects.create(ph_sn=1, index=0, input_type=Input.INPUT_TYPE_MAGNET, deleted=False, description='in 0')
         #self.obj0.tags.add('Door')
         #self.obj0.save()
 
         #Schedule.objects.create(sun=True, mon=False, tue=False, wed=False, thu=False, fri=False, but_only_secular_fri=False, sha=False, but_not_sukkot=False, time=datetime.time(1, 1, 0)).save()
-        self.output = Output.objects.create(ph_sn=1, ph_index=3, output_type=Output.OUTPUT_TYPE_BLIND_DOWN, deleted=False, description='out 3')
+        self.output = Output.objects.create(ph_sn=1, index=3, output_type=Output.OUTPUT_TYPE_BLIND_DOWN, deleted=False, description='out 3')
         self.output.save()
-        self.output2 = Output.objects.create(ph_sn=2, ph_index=3, output_type=Output.OUTPUT_TYPE_BLIND_DOWN, deleted=False, description='out 2')
+        self.output2 = Output.objects.create(ph_sn=2, index=3, output_type=Output.OUTPUT_TYPE_BLIND_DOWN, deleted=False, description='out 2')
         self.output2.save()
         return
 

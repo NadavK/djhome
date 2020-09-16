@@ -23,19 +23,19 @@ def set_initial_phidget_outputs(request_id=None):
     """
     logger = logging.getLogger(__name__)
     # prepare request_id
-    from log_request_id import local
-    from log_request_id.middleware import RequestIDMiddleware
-    local_request_id = getattr(local, 'request_id', None)
-    if not local_request_id:
-        local.request_id = request_id or ('wsgi_setDefaultStates_' + RequestIDMiddleware()._generate_id())
+    from ios.models import Output, Device
     try:
         logger.warning('Calling PhidgetServer to set output states')
         #from rest_framework.authtoken.models import Token
         #token = Token.objects.get(user__username='phidget_server')
-        from ios.models import Output
-        for sn in Output.objects.filter(output_type=Output.OUTPUT_TYPE_REGULAR).values_list('ph_sn', flat=True).distinct():
+
+        #for sn in Output.objects.filter(output_type=Output.OUTPUT_TYPE_REGULAR).values_list('ph_sn', flat=True).distinct():
+        for device in Device.objects.all():
             states_bytearray = bytearray(b' ' * 100)
-            for index, default_state, state in Output.objects.filter(ph_sn=sn, output_type=Output.OUTPUT_TYPE_REGULAR).values_list('ph_index', 'default_state', '_my_state'):
+
+            qs = device.output_set.filter(output_type=Output.OUTPUT_TYPE_REGULAR)
+            for index, default_state, state in qs.values_list('index', 'default_state', '_my_state'):
+            #for index, default_state, state in Output.objects.filter(device=device, output_type=Output.OUTPUT_TYPE_REGULAR).values_list('index', 'default_state', '_my_state'):
                 if int(index) > 99:      # some scripts (non-phidget outputs) use high index numbers
                     continue
                 if default_state == Output.DEFAULT_STATE_TYPE_ON:
@@ -45,47 +45,38 @@ def set_initial_phidget_outputs(request_id=None):
                 elif default_state == Output.DEFAULT_STATE_TYPE_RESTORE_LAST:
                     states_bytearray[index] = ord('*')
                 else:
-                    logger.warning('Unknown default state %s/%s: "%s"', sn, index, default_state)
+                    logger.warning('Unknown default state %s/%s: "%s"', device.sn, index, default_state)
             states = str(bytes(states_bytearray), 'UTF8').rstrip()
-            url = settings.PHIDGET_SERVER_URL + 'default_outputs/' + sn
-            logger.warning('Calling PhidgetServer: POST %s, output mask: "%s"', url, states)
-            try:
-                Session().post(url, json={'states': states}, headers={settings.LOG_REQUEST_ID_HEADER: local.request_id}).raise_for_status()
-            except Exception:
-                logger.exception('Calling PhidgetServer')
-                #TODO: Should retry
+            if not device.set_default_outputs(states, request_id):
+                # TODO: Should retry
+                pass
 
-            #requests.post(url, json={'callback_url': me, 'token': token.key, 'outputs': states}).raise_for_status()
     except requests.exceptions.RequestException as e:  # catch all requests exception
         logger.error(e)
         #logger.info('Retrying in 5 seconds')
         #set_outputs.apply_async((), countdown=5)
     except Exception as ex:
-        logger.exception('')
+        logger.exception('Devices default state')
         #logger.info('Retrying in 5 seconds')
         #set_outputs.apply_async((), countdown=5)
-    finally:
-        try:
-            if not local_request_id:
-                local.request_id = request_id or ('wsgi_get_states_' + RequestIDMiddleware()._generate_id())
-            url = settings.PHIDGET_SERVER_URL + 'states'
-            logger.warning('Calling PhidgetServer: GET %s', url)
-            Session().get(url, headers={settings.LOG_REQUEST_ID_HEADER: local.request_id}).raise_for_status()
-        except requests.exceptions.RequestException as e:  # catch all requests exception
-            logger.error(e)
-            # logger.info('Retrying in 5 seconds')
-            # set_outputs.apply_async((), countdown=5)
-        except Exception as ex:
-            logger.exception('')
-            # logger.info('Retrying in 5 seconds')
-            # set_outputs.apply_async((), countdown=5)
 
-        if not local_request_id:
-            delattr(local, 'request_id')
+    try:
+        hosts = []
+        #for device in Device.objects.values_list('host', flat=True).distinct():
+        for device in Device.objects.all():
+            if device.host not in hosts:    # no reason to call the same host twice
+                hosts.append(device.host)
+                if not device.trigger_get_states(request_id):
+                    # TODO: Should retry
+                    # logger.info('Retrying in 5 seconds')
+                    # set_outputs.apply_async((), countdown=5)
+                    pass
+    except:
+        logger.exception('Devices current state')
 
 
 @job
-def set_output_state(args):
+def set_output_state_from_delay(args):
     logger = logging.getLogger(__name__)
     logger.info('Output timed-execution')
     pk, state, target_position = args

@@ -115,7 +115,7 @@ class Schedule(models.Model):
     task_id = models.CharField(blank=True, max_length=36)
 
     # class Meta:
-    #    index_together = [["ph_sn", "ph_index"], ]
+    #    index_together = [["ph_sn", "index"], ]
     #    permissions = (
     #        ('view_output', 'View Output'),
     #    )
@@ -266,7 +266,7 @@ class OnetimeSchedule(models.Model):
     task_id = models.CharField(blank=True, max_length=36)
 
     # class Meta:
-    #    index_together = [["ph_sn", "ph_index"], ]
+    #    index_together = [["ph_sn", "index"], ]
     #    permissions = (
     #        ('view_output', 'View Output'),
     #    )

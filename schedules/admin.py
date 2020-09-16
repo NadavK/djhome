@@ -24,7 +24,7 @@ class ScheduleAdminForm(forms.ModelForm):
 
 @admin.register(Schedule)
 class ScheduleAdmin(GuardedModelAdmin):
-    #list_display = ['description', 'ph_sn', 'ph_index', 'input_type', 'deleted', 'tag_list']
+    #list_display = ['description', 'ph_sn', 'index', 'input_type', 'deleted', 'tag_list']
     formfield_overrides = {
         models.CharField: {'widget': TextInput(attrs={'size': '6'})},
         models.TextField: {'widget': Textarea(attrs={'rows': 1, 'cols': 60})},

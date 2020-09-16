@@ -3,9 +3,10 @@ from django.contrib import admin
 from guardian.admin import GuardedModelAdmin
 from django_admin_listfilter_dropdown.filters import DropdownFilter, RelatedDropdownFilter, ChoiceDropdownFilter
 from taggit.admin import TagAdmin
+from taggit.models import Tag
 
 from djhome import settings
-from ios.models import Input, Output, InputToOutput, OutputAudit, TriggerAudit, Cue, CuedItem
+from ios.models import Input, Output, InputToOutput, OutputAudit, TriggerAudit, Cue, CuedItem, Device
 
 # @admin.register(InputType)
 # class InputTypeAdmin(admin.ModelAdmin):
@@ -18,15 +19,128 @@ from ios.models import Input, Output, InputToOutput, OutputAudit, TriggerAudit, 
 #     ordering = ('id',)
 
 
+from django import forms
+import logging
+log = logging.getLogger(__name__)
+# convert the errors to text
+from django.utils.encoding import force_text
+
+
+class InputForm(forms.ModelForm):
+
+    class Meta:
+        model = Input
+        exclude = []
+
+    def __init__(self, *args, **kwargs):
+        log.debug('Created InputForm')
+        super().__init__(*args, **kwargs)
+
+    def is_valid(self):
+        log.debug('running is_valid')
+        log.info(force_text(self.errors))
+        result = super().is_valid()
+        log.debug('is_valid: %s' % result)
+        return result
+
+
+class InputToOutputForm(forms.ModelForm):
+
+    class Meta:
+        model = InputToOutput
+        exclude = []
+
+    def __init__(self, *args, **kwargs):
+        log.debug('Created InputToOutputForm')
+        super().__init__(*args, **kwargs)
+
+    def _clean_fields(self):
+        from django.forms.fields import Field, FileField
+        from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
+        for name, field in self.fields.items():
+            # value_from_datadict() gets the data from the data dictionaries.
+            # Each widget type knows how to retrieve its own data, because some
+            # widgets split data over several HTML fields.
+            if field.disabled:
+                value = self.get_initial_for_field(field, name)
+            else:
+                value = field.widget.value_from_datadict(self.data, self.files, self.add_prefix(name))
+            try:
+                if isinstance(field, FileField):
+                    initial = self.get_initial_for_field(field, name)
+                    value = field.clean(value, initial)
+                else:
+                    value = field.clean(value)
+                self.cleaned_data[name] = value
+                if hasattr(self, 'clean_%s' % name):
+                    value = getattr(self, 'clean_%s' % name)()
+                    self.cleaned_data[name] = value
+            except ValidationError as e:
+                log.exception('_clean_fields')
+                self.add_error(name, e)
+
+    def add_error(self, field, error):
+        log.debug('add_error: \'%s\': %s' % (field, error))
+        super().add_error(field, error)
+
+    def is_valid(self):
+        #non_field_errors
+
+
+        log.debug('running is_valid')
+        log.info(force_text(self.errors))
+        result = super().is_valid()
+        log.debug('is_valid: %s' % result)
+        return result
+
+
 class InputToOutputInline(admin.TabularInline):
     model = InputToOutput
     extra = 1
+    form = InputToOutputForm
+
+    def XXXget_queryset(self, request):
+        qs = InputToOutput.all_objects
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
+
+@admin.register(Device)
+class DeviceAdmin(GuardedModelAdmin):
+    list_display = ('description', 'sn', 'host', 'deleted')
+
+    def get_queryset(self, request):
+        #return super(InputAdmin, self).get_queryset_also_deleted(request).prefetch_related('tags')
+        qs = self.model._base_manager .get_queryset()
+        ordering = self.get_ordering(request)
+        if ordering:
+            qs = qs.order_by(*ordering)
+        return qs
 
 
 @admin.register(Input)
 class InputAdmin(GuardedModelAdmin):
     inlines = (InputToOutputInline, )
-    list_display = ('description', 'ph_sn', 'ph_index', 'input_type', 'deleted', 'tag_list')
+    list_display = ('description', 'device', 'index', 'input_type', 'deleted', 'tag_list')
+
+
+
+
+
+
+
+
+
+
+
+    form = InputForm
+
+
+
+
+
+
 
     def get_queryset(self, request):
         #return super(InputAdmin, self).get_queryset_also_deleted(request).prefetch_related('tags')
@@ -52,7 +166,7 @@ class CueAdmin(TagAdmin):
 class OutputAdmin(GuardedModelAdmin):
     inlines = (InputToOutputInline, )
 
-    list_display = ('description', 'ph_sn', 'ph_index', 'output_type', 'deleted', 'tag_list', 'cue_list', '_my_state', 'default_state', 'execution_limit', 'started_time', 'current_position') # add task_id?, 'off_delay_initiated_time'
+    list_display = ('description', 'device', 'index', 'output_type', 'deleted', 'tag_list', 'cue_list', '_my_state', 'default_state', 'execution_limit', 'started_time', 'current_position') # add task_id?, 'off_delay_initiated_time'
 
     def get_queryset(self, request):
         #return super(OutputAdmin, self).get_queryset_also_deleted(request).prefetch_related('tags')

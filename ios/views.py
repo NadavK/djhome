@@ -13,10 +13,19 @@ from rq_scheduler import Scheduler
 from djhome import settings
 from djhome.json_token_auth import JSONWebTokenAuthenticationQueryString, TokenAuthenticationQueryString
 from djhome.permissions import IsAdminOrIsSelf
-from .models import Input, Output
-from .serializers import InputSerializer, InputAdminSerializer, OutputSerializer, InputSimpleSerializer, OutputSimpleSerializer, OutputAdminSerializer, TagSerializer
+from .models import Input, Output, Device
+from .serializers import InputSerializer, InputAdminSerializer, OutputSerializer, InputSimpleSerializer, \
+    OutputSimpleSerializer, OutputAdminSerializer, TagSerializer, DeviceSerializer
 #from phidgets.signals import ph_input_changed_helper, ph_output_changed_helper
 import logging
+
+
+class DeviceViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows inputs to be viewed or edited.
+    """
+    queryset = Device.objects.all().order_by('id')
+    serializer_class = DeviceSerializer
 
 
 class InputViewSet(viewsets.ModelViewSet):
@@ -47,11 +56,17 @@ class InputViewSet(viewsets.ModelViewSet):
     @action(methods=['post'], detail=False, permission_classes=[IsAdminOrIsSelf])
     def input(self, request):
         self.logger.debug('received input_changed: %s', request.data)
-        ph_sn = request.data['sn']
-        ph_index = request.data['index']
+        index = request.data['index']
         state = request.data['state']
         user = self.request.user
-        Input.objects.set_input_by_sn_index(ph_sn, ph_index, state, user)
+        if 'device' in request.data:
+            device_id = request.data['device']
+            Input.objects.set_input_by_device_index(device_id, index, state, user)
+        elif 'sn' in request.data:
+            device_sn = request.data['sn']
+            Input.objects.set_input_by_device_sn(device_sn, index, state, user)
+        else:
+            raise(Exception('missing "device" or "sn"'))
         return Response({'status': 'OK'})
 
 
@@ -63,7 +78,7 @@ class InputViewSet(viewsets.ModelViewSet):
 
         input = self.get_object()
         self.logger.debug('set_down INPUTTTTTTTTTTTTTTTTTTT: %s', input)
-        #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, ph_index=input.ph_index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
+        #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, index=input.index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
         user = self.request.user
         input.on_state_change(True, user)
         return Response({'status': 'OK'})
@@ -72,7 +87,7 @@ class InputViewSet(viewsets.ModelViewSet):
     def set_up(self, request, pk=None):
         input = self.get_object()
         self.logger.debug('set_up INPUTTTTTTTTTTTTTTTTTTT: %s', input)
-        #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, ph_index=input.ph_index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
+        #ph_input_changed_helper(sender=self.__class__, ph_sn=input.ph_sn, index=input.index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
         user = self.request.user
         input.on_state_change(False, user)
         return Response({'status': 'OK'})
@@ -120,7 +135,6 @@ class OutputViewSet(viewsets.ModelViewSet):
         self.logger.debug('received set output request: %s', request.data)
         state = request.data['state']
         cue = request.data.get('cue')
-        self.logger.debug('cue: %s', cue)
         if cue:
             if state == 'on':
                 state = True
@@ -131,9 +145,10 @@ class OutputViewSet(viewsets.ModelViewSet):
             for output in outputs:
                 output.set_state(state, user=self.request.user)
         else:
-            ph_sn = request.data['sn']
-            ph_index = request.data['index']
-            Output.objects.set_state_by_sn_index(ph_sn, ph_index, state, self.request.user)
+            id = request.data['id']
+            output = Output.objects.get(pk=id)
+            #Output.objects.set_state_by_pk(id, state, user=self.request.user)
+            output.set_state(state, user=self.request.user)
 
             #self.logger.debug('Auditing...')        # this does func does not seem to be called...
             #OutputAudit.objects.create(output=output, state=state, user=self.request.user)         # Save audit of what initiated the output-change
@@ -148,8 +163,8 @@ class OutputViewSet(viewsets.ModelViewSet):
         #print(data)
         try:
             #self.logger.info('received: ', request)
-            output = Output.objects.get(ph_sn=request.data['sn'], ph_index=request.data['index'])
-            # ph_output_changed_helper(sender=self.__class__, ph_sn=output.ph_sn, ph_index=output.ph_index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
+            output = Output.objects.get(device__sn=request.data['sn'], index=request.data['index'])
+            # ph_output_changed_helper(sender=self.__class__, ph_sn=output.ph_sn, index=output.index, state=True)       #calling signal sometimes causes phidget to fire all inputs and outputs
             output.on_state_change(request.data['state'])
         except Output.DoesNotExist:
             self.logger.warning('Output %s/%s not found' % (request.data['sn'], request.data['index']))
@@ -189,16 +204,16 @@ def inputs_by_tags(request, tags):
         'inputs': inputs,
 })
 
-from django.shortcuts import render
-from .models import Output
-
-def index(request):
-    """
-    Root page view. Just shows a list of values currently available.
-    """
-    return render(request, "index.html", {
-        "output_message_values": Output.objects.order_by("id"),
-    })
+# from django.shortcuts import render
+# from .models import Output
+#
+# def index(request):
+#     """
+#     Root page view. Just shows a list of values currently available.
+#     """
+#     return render(request, "index.html", {
+#         "output_message_values": Output.objects.order_by("id"),
+#     })
 
 
 from rest_framework.views import APIView

@@ -26,6 +26,6 @@ class OnetimeScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = OnetimeSchedule
         fields = '__all__'
-        #fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'ph_sn', 'ph_index'
+        #fields = 'pk', 'description', 'state', 'type', 'tags', 'execution_limit', 'started_time', 'current_position', 'ph_sn', 'index'
 
 
