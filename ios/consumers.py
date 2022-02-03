@@ -42,16 +42,18 @@ class IOConsumer(JsonWebsocketConsumer):
                 self.send_json({'status': 'Authorization succeeded'})
                 return
         except Exception:
-            self.logger.exception('Auth exception')
+            self.logger.exception('Auth exception. Closing connection.')
             self.send_json({'status': 'Authorization failed'})
+            self.close(code=4010)
 
         try:
             # Change state for output object (input or output)
             # Expected payload: {"stream": "action", "payload": {"action": "update", "model": "ios.models.Output", "pk": "2", "data": {"state": true}}}
             user = self.scope.get('user')
             if user is None or not user.is_authenticated:
-                self.logger.warning('Invalid user: ActionConsumer from %s (%s)' % (content, user))
+                self.logger.warning('Invalid user: ActionConsumer from %s (%s). Closing connection.' % (content, user))
                 self.send_json({'status': 'Not authorized'})
+                self.close(code=4010)
                 return
 
             self.logger.info('ActionConsumer from %s (%s)' % (content, user))
