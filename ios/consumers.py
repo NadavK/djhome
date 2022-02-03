@@ -1,107 +1,106 @@
-import asyncio
 import datetime
 import json
 import logging
+
+from asgiref.sync import async_to_sync
 from django.apps import apps
 from channels.generic.websocket import JsonWebsocketConsumer
 from channels.layers import get_channel_layer
+from django.contrib.auth import get_user_model
 
 
 class IOConsumer(JsonWebsocketConsumer):
-    groups = ["broadcast"]
-
-    """ Needed custom Consumer because Input doesn't have status field, and Output has _my_state field """
-    logger = logging.getLogger(__module__ + '.IOConsumer')
+    groups = ["broadcast"]          # django-channels automatically adds new connections to this (these) groups
+    logger = logging.getLogger(__name__ + '.IOConsumer')
 
     def __init__(self, *args, **kwargs):
-        #print("init:", args, kwargs)
-
         self.logger.debug('Created ActionConsumer logger')
-        self.input_model = apps.get_model('ios', 'Input')
-        self.logger.info('Caching Input model')
-        self.output_model = apps.get_model('ios', 'Output')
-        self.logger.info('Caching Output model')
+        self.input_model = None
+        self.output_model = None
 
         super(IOConsumer, self).__init__(*args, **kwargs)
 
     def connect(self):
-        self.logger.info('channel connection')
-        super().connect()
+        # Cache models for quicker response
+        self.logger.info('Caching Input model')
+        self.input_model = apps.get_model('ios', 'Input')
+        self.logger.info('Caching Output model')
+        self.output_model = apps.get_model('ios', 'Output')
 
-    def accept(self, subprotocol=None):
-        super().accept(self.scope['jwt'])       # I don't know how to return multiple protocols
-
-    def disconnect(self, close_code):
-        pass
-
-    def connection_groups(self, **kwargs):
-        self.logger.info('channel connection group')
-        #from pprint import pprint,pformat
-        #self.logger.info(pformat(vars(kwargs['multiplexer'])))
-        #for o in kwargs:
-        #   self.logger.info(pformat(vars(0)))
-        return ["action"]
-        #return ["output-updates"]
-
-    @classmethod
-    def send_io_changed(cls, obj, state):
-        try:
-            cls.logger.info('Sending IO change notification')
-
-            # obj can be Input or Output - just need a pk
-            msg = json.dumps({"action": "update", "pk": obj.pk, "model": obj.__module__ + "." + obj.__class__.__name__, "state": state, "stream": "action", "duh":  str(datetime.datetime.now())})
-            cls.logger.debug('**************send_io_changed message: %s' % msg)
-
-            # Send message to broadcast group
-            # don't ask...  https://stackoverflow.com/questions/50299749/signals-and-django-channels-chat-room
-            loop = asyncio.get_event_loop()
-            coroutine = get_channel_layer().group_send(
-                'broadcast',
-                {
-                    'type': 'broadcast_message',
-                    'message': msg
-                }
-            )
-            asyncio.run_coroutine_threadsafe(coroutine, loop)
-            #loop.run_until_complete(coroutine)
-        except Exception:
-            cls.logger.exception('')
-
-    def broadcast_message(self, event):
-        """ Receive message from room group """
-        message = event['message']
-
-        # Send message to WebSocket
-        self.send(text_data=json.dumps({
-            'message': message
-        }))
+        self.accept()
 
     def receive_json(self, content, **kwargs):
-        """ Receives an action from the user to change state for output object (input or output)"""
-
-        # Expected payload: {"stream":"action","payload":{"action":"update","model":"ios.models.Output","pk":"2","data":{"state":true}}}
-        user = self.scope.get('user')
-        if user is None or not user.is_authenticated:
-            self.logger.warning('Invalid user: ActionConsumer from %s (%s)' % (content, user))
-            self.send_json({'status': 'Not authorized'})
-            return
-
-        self.logger.info('ActionConsumer from %s (%s)' % (content, user))
+        """ Receives an action from the user: either auth, or change state"""
         try:
+            # Each websocket connection is expected to send an "auth" message, and we then set the user to the scope
+            # Expected payload: {"stream": "auth", "token": "..."}
+            if content['stream'] == 'auth':
+                from rest_framework_simplejwt.tokens import AccessToken
+                user = get_user_model().objects.get(id=AccessToken(content['token'])['user_id'])
+                self.scope['user'] = user
+                self.logger.info('Websocket authenticated user: %s' % user)
+                self.send_json({'status': 'Authorization succeeded'})
+                return
+        except Exception:
+            self.logger.exception('Auth exception')
+            self.send_json({'status': 'Authorization failed'})
+
+        try:
+            # Change state for output object (input or output)
+            # Expected payload: {"stream": "action", "payload": {"action": "update", "model": "ios.models.Output", "pk": "2", "data": {"state": true}}}
+            user = self.scope.get('user')
+            if user is None or not user.is_authenticated:
+                self.logger.warning('Invalid user: ActionConsumer from %s (%s)' % (content, user))
+                self.send_json({'status': 'Not authorized'})
+                return
+
+            self.logger.info('ActionConsumer from %s (%s)' % (content, user))
+
             payload = content['payload']
             pk = payload['pk']
             state = payload['data']['state']
             model = payload['model']
-            if model == 'ios.models.Output':
-                #TODO: check user authorization
-                self.output_model.objects.set_state_by_pk(pk, state, user=user)
-            elif model == 'ios.models.Input':
+            if model == 'ios.models.Input':
                 #TODO: check user authorization
                 self.input_model.objects.set_state_by_pk(pk, state, user=user)
+            elif model == 'ios.models.Output':
+                #TODO: check user authorization
+                obj = self.output_model.objects.set_state_by_pk(pk, state, user=user)
+                if obj:
+                    self.logger.info('State not changed. Sending state notification to sync client')
+                    self.send_json({'message': self.create_io_changed_msg(obj)})
             else:
                 self.logger.error('ActionConsumer unknown model: %s' % model)
 
             self.send_json({'status': 'OK'})
         except Exception:
-            self.logger.exception('')
+            self.logger.exception('Action exception')
             self.send_json({'status': 'Invalid'})
+
+    def create_io_changed_msg(self, obj):
+        # obj can be Input or Output - just need a pk
+        msg = json.dumps(
+            {"action": "update", "pk": obj.pk, "model": obj.__module__ + "." + obj.__class__.__name__, "state": obj.state,
+             "stream": "action", "duh": str(datetime.datetime.now())})
+        return msg
+
+    def send_io_changed(self, obj):
+        self.logger.info('Sending IO change notification')
+        message = self.create_io_changed_msg(obj)
+        try:
+            async_to_sync(get_channel_layer().group_send)(
+                self.groups[0],
+                {
+                    'type': 'broadcast_message',
+                    'message': message
+                }
+            )
+            self.logger.info('Sent IO change notification')
+        except Exception:
+            self.logger.exception('')
+
+    def broadcast_message(self, event):
+        # Send message to WebSocket
+        self.send_json({
+            'message': event['message']
+        })
