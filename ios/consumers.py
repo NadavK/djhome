@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 
 class IOConsumer(JsonWebsocketConsumer):
     groups = ["broadcast"]          # django-channels automatically adds new connections to this (these) groups
-    logger = logging.getLogger(__name__ + '.IOConsumer')
+    logger = logging.getLogger(__name__)
 
     def __init__(self, *args, **kwargs):
         self.logger.debug('Created ActionConsumer logger')
@@ -38,7 +38,7 @@ class IOConsumer(JsonWebsocketConsumer):
                 from rest_framework_simplejwt.tokens import AccessToken
                 user = get_user_model().objects.get(id=AccessToken(content['token'])['user_id'])
                 self.scope['user'] = user
-                self.logger.info('Websocket authenticated user: %s' % user)
+                self.logger.info('User authenticated: %s' % user)
                 self.send_json({'status': 'Authorization succeeded'})
                 return
         except Exception:
