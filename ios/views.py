@@ -86,8 +86,8 @@ class OutputViewSet(viewsets.ModelViewSet):
     """
     queryset = Output.objects.all().order_by('id')
     serializer_class = OutputSerializer
-    authentication_classes = [OAuth2Authentication, JWTAuthentication,
-                              TokenAuthentication]  # , TokenAuthenticationQueryString]
+    # authentication_classes = [OAuth2Authentication, JWTAuthentication,
+    #                           TokenAuthentication]  # , TokenAuthenticationQueryString]
     required_scopes = ['write']
     logger = logging.getLogger(__module__)
 
@@ -183,7 +183,7 @@ class OutputViewSet(viewsets.ModelViewSet):
 
     # Sent by Google Assistant to change output state
     # @action(methods=['get', 'post'], detail=False, permission_classes=[IsAdminOrIsSelf])
-    @action(methods=['post'], detail=False, permission_classes=[permissions.IsAuthenticated, TokenHasScope])
+    @action(methods=['post'], detail=False, authentication_classes=[OAuth2Authentication], permission_classes=[permissions.IsAuthenticated, TokenHasScope])
     def intents(self, request):
         self.logger.info('Received intent: %s', request.data)
         self.logger.info('Received intent from user: %s',
