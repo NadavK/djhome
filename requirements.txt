@@ -29,4 +29,4 @@ rq-dashboard==0.6.1
 rq-scheduler==0.9
 rq-scheduler-dashboard==0.0.2
 tornado==5.1.1
-Twisted==21.7.0
+Twisted==22.4.0
